@@ -1,0 +1,158 @@
+compile function mpd_win_used( void )
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+//																								
+// This program is proprietary and is not to be used by or disclosed to others, 	
+// nor is it to be copied without written permission from Envizion Systems Pty Ltd.
+//	
+// Name       : 																
+//																								
+// Description:	list fields in [W] that are actually used. Helper for oi2web_init
+//
+// * @package	PowerForce
+// * @author	Martin Drenovac (for Envizion Systems Pty Ltd)
+// * @copyright	Copyright (c) 2007 - present, Envizion Systems Pty Ltd
+// * @licence	http://powerforcesoftware.com/user/license.html
+// * @link		http://powerforcesoftware.com
+// * @since		Version 1.0
+//																										
+// History (Date, Initials, Notes)																
+// 17/10/16 mpd Original programmer
+// 18/10/16 mpd add unique fields in [W], so we can focus on what to refactor for oi2web																
+//																								
+// Date: 2016/10/17 17:34:22 +1000 (Mon 17 Oct 2016)
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+#PRAGMA OUTPUT SYSLISTS mpd_win_used
+
+$INSERT nv_copyright
+$INSERT nv_userprefs
+
+DECLARE function	nv_error, nv_utils,	nv_pss,	set_printer,	nv_printer_on, nv_printer_off
+DECLARE	subroutine	check_assignments
+check_assignments( directive, params )
+
+nv_version$$ = "[ver: g292]"
+IF directive[1,5] _eqc ver$$ THEN
+	RETURN nv_version$$
+END
+
+file$$		= "SYSREPOSWINS"
+OPEN "", file$$ TO sr$f ELSE
+	RETURN nv_error("XF07", nv_utils("OPEN", file$$))
+END
+
+xParams		= 1
+xParams<2>	= 0
+xParams<3>	= "Selecting EMPLOYEE "
+xParams<4>	= 1
+
+//	numshifts = nv_pss("SYSREPOSWINS", xparams, 0)
+
+used_fields	= ""
+
+SELECT sr$f
+
+eof = 0
+win_list	= ""																; // list of all windows
+mat_size	= 55
+DIM windowz(mat_size)															; // for data scan
+MAT windowz	= ""
+
+x	= 0
+LOOP
+	READNEXT id ELSE eof = 1
+WHILE NOT(eof) DO
+	x +=1
+	IF INDEX(id,"MMS",1) THEN
+		GOSUB work
+		* 	IF x = 20 THEN eof = 1
+	END 
+REPEAT
+
+GOSUB xdump_windowz:
+
+RETURN 0
+////////////////////////////////////////////////////////////////////////////////
+// 
+////////////////////////////////////////////////////////////////////////////////
+work:
+	READ buffer FROM sr$f, id THEN
+		
+		r3	= FIELD(buffer,@RM, 3,1)
+		GOSUB item_count
+		GOSUB get_field_values:
+	END ELSE
+		
+	END 
+RETURN
+
+get_field_values:
+	items	= DCOUNT(r3,@FM)
+	FOR a = 1 TO items
+		this	= r3<a>
+		////////////////////////////////////////////////////////////////////////////////
+		// 1. is the id, no need to check it
+		////////////////////////////////////////////////////////////////////////////////
+		FOR b = 2 to 50
+			element = this<1,b>													; // field within one widget
+			IF b = 30 THEN
+				IF element _eqc "<<None>>" THEN
+					element = ""												; // TODO - this isn't working
+				END
+			END 
+			IF LEN(element) THEN
+				filler	= windowz(b)
+				LOCATE element IN filler BY 'AR' USING @FM SETTING pos THEN
+					
+				END ELSE
+					filler		= REPLACE(filler,pos,0,0,element)
+					windowz(b)	= filler
+				END
+			END
+		NEXT b	
+	NEXT a
+	
+RETURN
+
+item_count:
+	things	= DCOUNT(r3,@FM)
+	
+	FOR a = 1 TO things
+		this	= r3<a>
+		FOR b = 1 TO 60
+			IF LEN(this<1,b>) THEN
+				used_fields = REPLACE(used_fields,b,0,0,b)
+			END
+		NEXT b
+	NEXT a
+RETURN
+
+xdump_windowz:
+	GOSUB dict_items:
+	void = nv_printer_on()
+	////////////////////////////////////////////////////////////////////////////////
+	// we need to setup skip fields to avoid printing things which are unique throughout
+	////////////////////////////////////////////////////////////////////////////////
+	skip_fields = "1,5,6,15,20,21,31,32,33,39,43,44,45,46,47,48"
+	CONVERT "," TO @FM IN skip_fields
+	
+	FOR a = 2 TO mat_size
+		LOCATE a IN skip_fields USING @FM setting pos THEN
+			
+		END ELSE
+			
+			//		IF NOT(INDEX(skip_fields,a,1)) THEN
+			item	= windowz(a)
+			CONVERT @FM  TO "," IN item
+			CONVERT @SVM TO ";" IN item
+			void = set_printer(text$$, a:", ":dict<a>:", ":item)
+			void = set_printer(text$$," ")
+		END
+	NEXT a
+	void = nv_printer_off()
+RETURN
+
+dict_items:
+	$INSERT oi2web_equates
+RETURN

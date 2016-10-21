@@ -1,0 +1,158 @@
+compile function oi2web_json( directive, widget_list )
+////////////////////////////////////////////////////////////////////////////////
+// see oi2web_init as the pre-process to this to setup necessary table
+////////////////////////////////////////////////////////////////////////////////
+//																								
+// This program is proprietary and is not to be used by or disclosed to others, 	
+// nor is it to be copied without written permission from Envizion Systems Pty Ltd.
+//	
+// Name       : 																
+//																								
+// Description:	function called by oi2web init to .json a [W]indow
+//
+// * @package	PowerForce
+// * @author	Martin Drenovac (for Envizion Systems Pty Ltd)
+// * @copyright	Copyright (c) 2007 - present, Envizion Systems Pty Ltd
+// * @licence	http://powerforcesoftware.com/user/license.html
+// * @link		http://powerforcesoftware.com
+// * @since		Version 1.0
+//																										
+// History (Date, Initials, Notes)																
+// 17/10/16 mpd Original programmer																	
+//																								
+// Date: 2016/10/17 17:34:22 +1000 (Mon 17 Oct 2016)
+////////////////////////////////////////////////////////////////////////////////
+// 18/10 TODO work out how to run it thorugh this: http://jsonformatter.org/
+////////////////////////////////////////////////////////////////////////////////
+#PRAGMA OUTPUT SYSLISTS mpd_oi2web_json
+
+$INSERT nv_copyright
+$INSERT nv_userprefs
+
+DECLARE function	nv_error,	OPLOG_FILE_CHANGES
+DECLARE	subroutine	check_assignments
+check_assignments( directive, widget_list )
+
+nv_version$$ = "[ver: g291]"
+IF widget_list[1,5] _eqc ver$$ THEN
+	RETURN nv_version$$
+END
+
+
+file	= 'OI2WEB'
+fields	= ""
+widgets	= ""
+
+////////////////////////////////////////////////////////////////////////////////
+// all widgets per window - caller has put them into file with these ids
+
+////////////////////////////////////////////////////////////////////////////////
+FOR q = 1 TO DCOUNT(widget_list, @FM)
+	id	= widget_list<q>
+	
+	// things past 44 are DDE
+	list	= ""																; // this one widget
+	FOR a = 1 TO 44
+		fields	= a																; // just what next function wants
+		void	= OPLOG_FILE_CHANGES(File, ID, Fields)
+		void[-1,1] = ""															; // remove {} from reply
+		void[1,1]  = ""
+		list<-1>	= void
+	NEXT a
+	
+	w		= " "
+	w<-1>	= "		  {{WIDGET}}"
+	w<-1>	= "},"
+	w<-1>	= "{"
+	
+	SWAP @FM WITH ",":\0D0A\ IN list
+	SWAP "{{WIDGET}}"	WITH list IN w
+	widgets<-1>	= w
+NEXT q
+
+////////////////////////////////////////////////////////////////////////////////
+// do the [@WINDOW] object
+////////////////////////////////////////////////////////////////////////////////
+id		= 'WINDOW'
+fields	= ""
+list_win= ""
+
+// things past 44 are DDE
+FOR a = 1 TO 44
+	fields	= a
+	void	= OPLOG_FILE_CHANGES(File, ID, Fields)
+	void[-1,1] = ""
+	void[1,1]  = ""
+	list_win<-1>	= void
+NEXT a
+
+////////////////////////////////////////////////////////////////////////////////
+// make json object
+// 
+////////////////////////////////////////////////////////////////////////////////
+j		= ""
+j<-1>	= "	{"
+j<-1>	= '	  "window": {'
+j<-1>	= ""
+j<-1>	= "{{WINDOW}}"
+j<-1>	= "	  },"
+j<-1>	= @FM
+j<-1>	= '	  "widgets": [{'
+j<-1>	= "		{{WIDGETS}}"
+j<-1>	= "	  }]"
+j<-1>	= "	}"
+j<-1>	= ""
+
+* 	w		= ""
+* 	w<-1>	= "		  {{WIDGET}},"
+* 	w<-1>	= "},"
+* 	w<-1>	= "{"
+
+
+json	= j
+SWAP @FM WITH ",":\0D0A\ in list_win
+SWAP "{{WINDOW}}"	WITH list_win IN json
+
+
+* 	SWAP @FM WITH ",":\0D0A\ IN widgets
+* 	SWAP "{{WIDGET}}"	WITH widgets IN w
+SWAP "{{WIDGETS}}"	WITH widgets IN json
+CONVERT @FM TO " "	IN json
+
+OSWRITE json TO "f:\temp\test.json"
+
+RETURN 0
+////////////////////////////////////////////////////////////////////////////////
+// this is the implied json object format
+////////////////////////////////////////////////////////////////////////////////
+/*
+{
+  "window": {
+    "id": "window",
+    "field1": "filler"
+  },
+  "widgets": [
+    {
+      "id": "widget1",
+      "field1": "TEXT",
+      "type": [
+        {
+          "thing1": "value1",
+          "thing2": "value2"
+        }
+      ]
+    },
+    {
+      "id": "widget2",
+      "field1": "USERNAME",
+      "type": [
+        {
+          "thing1": "value1",
+          "thing2": "value2"
+        }
+      ]
+    }
+  ]
+}
+
+*/

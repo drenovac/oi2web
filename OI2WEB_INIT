@@ -1,0 +1,600 @@
+compile function oi2web_init( directive, params )
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+//																								
+// This program is proprietary and is not to be used by or disclosed to others, 	
+// nor is it to be copied without written permission from Envizion Systems Pty Ltd.
+//	
+// Name       : 																
+//																								
+// Description:	create default table to allow json processing
+//
+// * @package	PowerForce
+// * @author	Martin Drenovac (for Envizion Systems Pty Ltd)
+// * @copyright	Copyright (c) 2007 - present, Envizion Systems Pty Ltd
+// * @licence	http://powerforcesoftware.com/user/license.html
+// * @link		http://powerforcesoftware.com
+// * @since		Version 1.0
+//																										
+// History (Date, Initials, Notes)																
+// 17/10/16 mpd Original programmer
+// 20/10/16 mpd break out 0x elements																
+//																								
+// Date: 2016/10/17 17:34:22 +1000 (Mon 17 Oct 2016)
+////////////////////////////////////////////////////////////////////////////////
+// changed "OPLOG_GETFIELDNAMEBYPOS" to return DICT field name vs. "FIELD_"xx as used by oplog
+////////////////////////////////////////////////////////////////////////////////
+#PRAGMA OUTPUT SYSLISTS mpd_oi2web_init
+
+$INSERT nv_copyright
+$INSERT nv_userprefs
+$INSERT OIWin_Equates
+
+DECLARE function	nv_error,	nv_utils,	get_status,	create_table,	oi2web_json,	OPLOG_FILE_CHANGES
+DECLARE	subroutine	check_assignments
+check_assignments( directive, params )
+
+nv_version$$ = "[ver: g294]"
+IF directive[1,5] _eqc ver$$ THEN
+	RETURN nv_version$$
+END
+
+file$$		= "OI2WEB"
+OPEN "", file$$ TO oi$f ELSE
+	GOSUB create_table:
+	//	RETURN nv_error("XF07", nv_utils("OPEN", file$$))
+END
+
+
+OPEN "", file$$ TO oi$f ELSE
+	RETURN nv_error("XF07", nv_utils("OPEN", file$$))
+END
+
+file$$		= "SYSREPOSWINS"
+OPEN "", file$$ TO sr$f ELSE
+	RETURN nv_error("XF07", nv_utils("OPEN", file$$))
+END
+
+win_id	= "MMS**USERLOGIN2"														; // we'd pass this in though 'arg' in the call
+* win_id	= "MMS**POWERFORCE_MDI"
+win_id	= "MMS**SCHEDULING_WORKBENCH"
+
+READ buffer FROM sr$f, win_id ELSE
+	mpd = 'a'
+	RETURN 0
+END
+
+
+
+////////////////////////////////////////////////////////////////////////////////
+//	window_header	= Field(window_rec, @rm, 1)
+//	window_info		= Field(window_rec, @rm, 2)
+//	window_title	= window_info<1, 9>
+//	prompts			= Field(window_rec, @rm, 3)
+//	num_prompts		= window_header<2>
+// 
+////////////////////////////////////////////////////////////////////////////////
+r1	= FIELD(buffer,@RM,1)
+r2	= FIELD(buffer,@RM,2,1)														; // window defn
+r3	= FIELD(buffer,@RM,3,1)														; // each field define
+r4	= FIELD(buffer,@RM,4,1)
+
+////////////////////////////////////////////////////////////////////////////////
+// uncomment this on first install of table for DICT layout
+// once created - no need to re-exec this.
+// this is a bit sloppy in sequence, but once setup no need to go back
+////////////////////////////////////////////////////////////////////////////////
+//	GOSUB create_table:
+
+CLEARFILE oi$f ELSE
+	RETURN 0																	; // do one window at a time
+END
+
+window_info	= r2
+
+////////////////////////////////////////////////////////////////////////////////
+// for specific fields, we'll do some local .json hacking to get text in place of 0xVALUES
+// fields past 44 are DDE and not relevant here
+// write out the [@WINDOW] record
+////////////////////////////////////////////////////////////////////////////////
+
+window_x      = window_info<1, POS_X$>											; // POS_X$              to 5
+window_y      	= window_info<1, POS_Y$>											; // POS_Y$              to 6
+
+window_width  	= abs(window_info<1, POS_WIDE$>)								; // POS_WIDE$           to 7
+window_height 	= abs(window_info<1, POS_HIGH$>)								; // POS_HIGH$           to 8
+x_pos		  	= 0
+y_pos		  	= 0
+
+width			= abs(window_width)
+height			= abs(window_height)
+window_info		= REPLACE(window_info,1,POS_X$,0,width)
+window_info		= REPLACE(window_info,1,POS_Y$,0,height)
+
+
+
+FOR a = 1 TO 44
+	BEGIN CASE
+		CASE a = 10	;	GOSUB win_field10
+		CASE a = 11	;	GOSUB win_field11
+		CASE a = 32	;	GOSUB win_field32
+		CASE a = 37	;	GOSUB win_field37
+	END CASE
+	
+	* 	fields	= a																	; // just what next function wants
+	* 	void	= OPLOG_FILE_CHANGES("OI2WEB", ID, Fields)
+	* 	void[-1,1]	= ""															; // remove {} from reply
+	* 	void[1,1] 	= ""
+	* 	list<-1>	= void
+NEXT a
+
+CONVERT @VM  TO @FM IN window_info												; // 'W' each VALUE out as FIELD
+CONVERT @SVM TO @VM IN window_info
+CONVERT @TM  TO @SVM IN window_info
+
+WRITE window_info TO oi$f, "WINDOW" ELSE
+	mpd = 1
+	RETURN 0
+END
+
+
+
+////////////////////////////////////////////////////////////////////////////////
+// Now work through each widget, write away each widget on tty
+////////////////////////////////////////////////////////////////////////////////
+no_widgets		= r1<2>
+widgets_list	= ""															; // ids we need to re-create
+FOR z = 1 TO no_widgets
+	
+	this_prompt	= r3<z>
+	id		= this_prompt<1,1>
+	
+	////////////////////////////////////////////////////////////////////////////////
+	// for specific fields, we'll do some local .json hacking to get text in place of 0xVALUES
+	////////////////////////////////////////////////////////////////////////////////
+	* Scan the controls to determine the page count
+	* Page positions are indicated by a :x in the y_pos
+	* This is zero based, so controls on the first page have no ':' in the y_pos
+	* Fields on Page 2 have a y_pos like 25:1,
+	*  add one to the number, so 25:1 will register as page 2
+	page_cnt	= 0
+	
+	this_y		= this_prompt<1,POS_Y$>
+	this_page	= field(this_y, ':',2)
+	this_page	+= 1
+	if this_page > page_cnt then
+		page_cnt = this_page
+	end
+	////////////////////////////////////////////////////////////////////////////////
+	// still WIP
+	tablename   = this_prompt<1, 23>
+	swap @tm with char(13):char(10) in  tablename
+	fieldname   = this_prompt<1, 24>
+	swap @tm with char(13):char(10) in  fieldname
+	qe_defined  = this_prompt<1, 18>
+	scr_defined = this_prompt<1,17>
+	* ro 4/21/05
+	swap char(250) with ","  in qe_defined
+	qe_names = this_prompt<1, 19>
+	QE_Info = ''
+	If qe_defined Then
+		num_qes = Count(qe_defined, @svm) + (qe_defined # '')
+		For j = 1 To num_qes
+			qe_line = qe_names<1,1,j>
+			qe_action = qe_defined<1,1,j>
+			this_qe_action = Field(qe_action, @tm, 2, 3)
+			Convert @tm To '; ' In this_qe_action
+			If qe_line then
+				qe_info<-1> = qe_line:'-> ':this_qe_action
+			end
+		Next j
+		Swap @fm With char(13):char(10) In qe_info
+	end
+	
+	// test for SCRIPT defined
+	scr_info = ''
+	if scr_defined then
+		scr_fld = scr_defined
+		convert @tm to @vm in scr_fld
+		for j = 1 to count(scr_fld,@vm) + (scr_fld # '')
+			scr_info: = scr_fld<1,j>:";"
+		next j
+		scr_info = Ctrlname :@vm:Scr_info
+		scr_info = scr_info[1,len(scr_info) -1]
+		scr_list<-1> = scr_info
+	end
+	
+	////////////////////////////////////////////////////////////////////////////////
+	//	GOSUB widget_misc:															; // uncomment when debugged
+	
+	FOR a = 1 TO 44
+		BEGIN CASE
+			CASE a =  3 ;	GOSUB widget_field03
+			CASE a = 10	;	GOSUB widget_field10
+			CASE a = 11	;	GOSUB widget_field11
+			CASE a = 32	;	GOSUB widget_field32
+		END CASE
+		
+		*		fields	= a																; // just what next function wants
+		*		void	= OPLOG_FILE_CHANGES("OI2WEB", ID, Fields)
+		*		void[-1,1] = ""															; // remove {} from reply
+		*		void[1,1]  = ""
+		*		list<-1>	= void
+	NEXT a
+	
+	CONVERT @VM TO @FM  IN this_prompt
+	CONVERT @SVM TO @VM IN this_prompt
+	CONVERT @TM TO @SVM IN this_prompt
+	
+	WRITE this_prompt TO oi$f, id ELSE
+		mpd = 1
+		RETURN 0
+	END
+	widgets_list<-1>	= id
+NEXT z
+
+directive	= ""																; // blank for now
+void = oi2web_json(directive, widgets_list)
+RETURN
+
+////////////////////////////////////////////////////////////////////////////////
+// 
+////////////////////////////////////////////////////////////////////////////////
+create_table:
+	dictflag = 0																; // create data/dict
+	table_attrib = ""															; // params for sizing
+	protect_flag = 0															; // some MFS flag
+	void = create_table('MMSCSTM','OI2WEB',DICTFLAG,'GLOBAL',TABLE_ATTRIB_LIST,PROTECT_FLAG)
+	status = get_status()
+	
+	////////////////////////////////////////////////////////////////////////////////
+	//  we'll create dict representative of the sysreposwins table
+	// basic stuff like size, MV
+	////////////////////////////////////////////////////////////////////////////////
+	
+	
+	
+	file$$		= "OI2WEB"
+	OPEN "DICT.":file$$ TO dict$f ELSE
+		RETURN nv_error("XF07", nv_utils("OPEN", file$$))
+	END
+	
+	
+	form_header		= FIELD(buffer, @RM, 1)
+	window_header	= FIELD(buffer, @RM, 2,1)
+	widgets			= FIELD(buffer, @RM, 3,1)
+	r4 = FIELD(buffer, @RM, 4,1)
+	r5 = FIELD(buffer, @RM, 5,1)
+	r6 = FIELD(buffer, @RM, 6,1)
+	
+	filler	= r3<1>
+	items	= DCOUNT(filler,@VM)
+	
+	GOSUB dict_items:															; // init dict names
+	
+	FOR a = 1 TO items
+		x	= ""
+		x<1>	= "F"
+		x<2>	= a
+		x<3>	= dict<a>
+		IF INDEX(FILLER<1,a>, @SVM,1) THEN
+			mv = "M"
+		END ELSE
+			mv = "S"
+		END
+		x<4>	= mv
+		
+		x<9>	= "T"
+		x<10>	= 20
+		
+		x<12>	= "VARCHAR"
+		x<28>	= 1																; // master definition
+		
+		WRITE x TO dict$f, x<3> ELSE
+			mpd = 1
+			RETURN 0
+		END
+	NEXT a
+	
+	
+RETURN
+
+dict_items:
+	$INSERT oi2web_equates
+RETURN
+
+////////////////////////////////////////////////////////////////////////////////
+// edittable
+////////////////////////////////////////////////////////////////////////////////
+widget_field03:
+	
+	BEGIN CASE
+		CASE x _eqc "BITMAP"	; GOSUB widget_bitmap:
+		CASE x _eqc "EDITTABLE"	; GOSUB widget_edittable:
+			
+	END CASE
+RETURN
+
+widget_bitmap:
+	
+RETURN
+
+widget_edittable:
+	IF x _eqc 'EDITTABLE' THEN
+		Limit = This_Control<1, 41>
+		colcount = This_Control<1, 40>
+		
+		et_style = this_control<1, 10, 1>
+		
+		* Ro 4/21/05
+		*et_style = iconv(et_style[3,99], 'MX')
+		*show_rownum = bitor(et_style, 16384)
+		if et_style[7,1] = 4 then show_rownum = True$ else show_rownum = False$
+		
+		* mtr 2-12-07
+		exclude_col1 = ''
+		If show_rownum Then 
+			colcount += 1
+		End Else
+			exclude_col1 = 1
+		end
+		
+		*For yy = 1 To 2
+		* Ro 4/21/05
+		NoRows = count(this_control<1,35,1>,@tm)  
+		For yy = 1 to NoRows
+			For xx = 1 to colcount
+				If show_rownum And xx = 1 then
+					list<yy, -1> = yy
+				End else
+					list<yy, -1> = ' '
+				end
+			Next xx
+		Next yy
+		
+		* Edit table column headings
+		oipi_colheads  = This_Control<1, 44>
+		If show_rownum Then oipi_colheads = '  ':@tm:oipi_colheads
+		convert @tm to @vm in oipi_colheads
+		tablecolor = ''
+		
+		*---
+		* EditTable widths, justs
+		*---
+		Styles = this_control<1, 42>
+		Convert @tm To @fm In styles
+		
+		widths = This_Control<1, 43>
+		Convert @tm To @fm In widths
+		
+		* mtr 2-12-07
+		If exclude_col1 Then
+			widths = Delete(widths, 1, 0, 0)
+		End
+		
+		oipi_coldef = ''
+		
+		rect_width = width  * x_scale
+		table_width = sum(widths)
+		table_scale = (rect_Width / table_Width) * 96
+		
+		for i = 1 to colcount
+			this_Style = iconv(styles<i>, 'MX')
+			this_pixels = Widths<i>
+			this_twips = this_pixels * pixels_to_twips * table_scale
+			begin case
+				case bitand(this_style, right_just$)
+					oipi_just = '>'
+				case bitand(this_style, center_just$)
+					oipi_just = '^'
+				case 1
+					oipi_just = '<'
+			end case
+			
+			this_coldef = oipi_just:this_twips
+			oipi_coldef<1,i> = this_coldef
+		Next
+		equ chunk_size to  8000
+		
+		if len(list) > chunk_size then
+			append = 0
+			line_count = count(list, @fm) + ( len(list) > 0 )
+			for i = 1 to line_count
+				this_line = list<i>
+				*			if append = 0 then
+				*				x = Set_Printer("ADDTABLE", oipi_coldef, oipi_colheads, this_line,  tableColor, "", append, TB_ALL:@fm:table_x + .10)
+				*				append = 1
+				*			end else
+				*				x = Set_Printer("ADDTABLE", oipi_coldef, oipi_colheads, this_line,  tableColor, "", append, TB_ALL:@fm:table_x + .10)
+				*			end
+				if x + 0 < 0 then
+					err = "Big Table ERROR = ":x
+					*				GoTo Error
+				end
+			next
+			GarbageCollect
+		end else
+			*		x = Set_Printer("ADDTABLE", oipi_coldef, oipi_colheads, list,  tableColor, "", 0, TB_ALL:@fm:table_x + .10)
+			if x + 0 < 0 then
+				err = "Lil Table ERROR = ":x
+				*			GoTo Error
+			end
+		end
+	END 
+RETURN
+
+widget_font:
+	oi_font = this_control<1, 15>
+	oipi_font = prev_font
+	if len(oi_font) then
+		oi_just = 'L' ; * justification, enhance to get from the control
+		oi_font_size =  Abs(oi_font<1,1,2>)
+		* Convert into small / medium / large
+		begin case
+			case oi_font_size > 16
+				oi_font_size = 9
+			case oi_font_size > 10                   
+				oi_font_size = 6
+			case otherwise$
+				oi_font_size = 4
+		end case
+		
+		oipi_font<1> = oi_font<1,1,1>   ; * <1> Font Name "Font String" Courier New
+		oipi_font<2> = oi_font_size     ; *Point Size 4-128 10
+		oipi_font<3> = oi_just          ; * Justification "L", "R", or "C" "L"
+		oipi_font<4> = oi_font<1,1,3>   ; *<4> FontBold 1=Bold0=Normal 0
+		oipi_font<5> = 0                ; *  Italics 0/1 0
+		oipi_font<6> = 0                ; *<6> Underline 0/1 0
+		
+	end else
+		oi_just = 'L' ; * justifcation, enchance to get from the control
+		oipi_font<1> = 'Courier New'   ; * <1> Font Name "Font String" Courier New
+		oipi_font<2> = '6'             ; * <2> Point Size 4-128 10
+		oipi_font<3> = 'L'             ; * Justification "L", "R", or "C" "L"
+		oipi_font<4> = 0               ; *  FontBold 1=Bold0=Normal 0
+		oipi_font<5> = 0               ; *  Italics 0/1 0
+		oipi_font<6> = 0               ; *<6> Underline 0/1 0
+	End
+RETURN
+
+widget_field10:
+	style = this_control<1, 10>
+	if style[3,1] <> '4' then visible = '1' else visible = '0' ;* ro 4/21/05
+	
+	/*
+					style = style<1,1,1>
+					style = iconv(style[3,99], 'MX')
+					visible = bitOr(style, 1)
+					*/
+RETURN
+
+widget_misc:
+	* X_pos, Y_pos, width, height have info encoded
+	* if they are negative, then the control is anchored or auto sized
+	* if y has a ':' then this_control is on page 2 or greater
+	* you then need to adjust values 
+	
+	y_info  = this_control<1, pos_y$>
+	y_pos   = field(y_info, ':',1)
+	page_pos= field(y_info, ':',2) + 1
+	
+	x_pos   = this_control<1, pos_x$>
+	* mtr 1-12-05
+	
+	width   = (this_control<1, pos_wide$>)
+	If width > window_width Then width = window_width
+	
+	height  = (this_control<1, pos_high$>)
+	
+	* Autosize Width?
+	if width < 0 then
+		width += window_width - abs( x_pos )
+	End
+	
+	* Autosize height?
+	if height < 0 then
+		height += window_height - abs( y_pos )
+	End
+	
+	* Anchor right?
+	if x_pos < 0 then  
+		If width > = window_width then
+			x_pos = 0
+		End Else
+			x_pos += window_width
+		end
+	end
+	
+	*Anchor_bottom?
+	if y_pos < 0 then
+		If width > = window_width then
+			y_pos = 0
+		End Else
+			y_pos += window_height
+		end
+	end  
+RETURN
+
+widget_field11:
+	
+RETURN
+
+widget_field32:
+	
+RETURN
+
+widget_tab:
+	rect = ''
+	rect<1> = x_pos * x_scale
+	rect<2> = y_pos * y_scale
+	rect<3> =  ( x_pos + width )  * x_scale
+	rect<4> =   ( y_pos + height )  * y_scale
+	* stat = Set_Printer("RECT", rect, oipi_all_pages_flag) ;* Print RECT
+	* now do the text
+	
+	* hardcoded for top, need to handle bottom, left, right
+	loc = 'T'
+	
+	tabtext = Field(this_control, @vm, 44)
+	If rect<4> + .25 > maxpos Then maxpos = rect<4> + .25
+	num_tabs = Count(tabtext, @tm) + (tabtext # '')
+	
+	If loc = 'T' then
+		ulx                          = rect<1>
+		uly                          = RECT<2>
+		start_x = rect<1> + .05
+		start_y = rect<2> + .05
+	end
+	For jj = 1 To num_tabs
+		this_tabtext = Field(tabtext, @tm, jj)
+		text = this_tabtext
+		*		stat = set_printer("CALCTEXT", text)
+		*		textsize = get_printer("CALCTEXT") ;* get the size
+		textwidth = textsize <1> ;* width of the text
+		textheight = textsize <2> ;* height of the text
+		extra_width =  ( width * x_scale ) - textwidth
+		if extra_width < 0 then
+			extra_width = 0
+		end
+		extra_height = ( height * y_scale ) - textheight
+		if extra_height < 0 then
+			extra_height = 0
+		end
+		text_x =  x_pos  * x_scale
+		
+		If jj = 1 then
+			rect<2> = start_y + textheight
+			*			stat = Set_Printer("RECT", rect, 1) ;* Print RECT
+		end
+		
+		*		stat = set_printer('TEXTXY', text, start_x:@fm:start_y, '', 1)
+		rect<1> = ULx
+		rect<2> = uly
+		rect<3> = start_x + textwidth
+		rect<4> = start_y + textheight
+		*		stat = Set_Printer("RECT", rect, 1)
+		start_x += textwidth + .1
+		ulx = rect<3>
+		
+		
+	Next jj
+	
+RETURN
+////////////////////////////////////////////////////////////////////////////////
+// 
+////////////////////////////////////////////////////////////////////////////////
+win_field10:
+	
+RETURN
+
+win_field11:
+	
+RETURN
+
+win_field32:
+	
+RETURN
+
+win_field37:
+	
+RETURN

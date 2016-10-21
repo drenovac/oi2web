@@ -1,0 +1,36 @@
+Function OPLOG_GETFIELDNAMEBYPOS(FILE, POS, MULTI, TYPE, FFORMAT)
+
+*******************************************************************
+*** Created By: 	Aaron Thorp <aaron@thinksoftware.net.au>      ***
+*** Last Updated:	05/01/2015 (Aaron Thorp)                      ***
+***                                                             ***
+*** Version:      1.00                                          ***
+*******************************************************************
+
+Open "DICT.":FILE To DI_FILE Else
+	Return
+End
+
+Read Rec From DI_FILE, "%FIELDS%" Then
+	
+	FName = Rec<3>
+	FPos = Rec<5>
+	
+	Convert @vm to @fm in FName
+	COnvert @vm to @fm in FPos
+	
+	Locate POS In FPos Using @fm Setting XPos Then
+		FMulti = Xlate("DICT.":FILE, FName<XPos>, 4, "X")
+		If FMulti = "M" Then Multi = 1
+		
+		Type = Xlate("DICT.":FILE, FName<XPos>, 12, "X")
+		FFormat = Xlate("DICT.":FILE, FName<XPos>, 7, "X")
+		
+		Return FName<XPos>
+	End
+	
+End
+
+//	Return "FIELD_":POS
+
+RETURN fname<xpos>																; // mpd 17/10/16
