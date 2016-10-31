@@ -130,7 +130,7 @@ RETURN
 
 xdump_windowz:
 	GOSUB dict_items:
-	void = nv_printer_on()
+	void = nv_printer_on()														; // set_printer('init'...
 	////////////////////////////////////////////////////////////////////////////////
 	// we need to setup skip fields to avoid printing things which are unique throughout
 	////////////////////////////////////////////////////////////////////////////////
@@ -150,7 +150,7 @@ xdump_windowz:
 			void = set_printer(text$$," ")
 		END
 	NEXT a
-	void = nv_printer_off()
+	void = nv_printer_off()														; // set_printer('term')
 RETURN
 
 dict_items:

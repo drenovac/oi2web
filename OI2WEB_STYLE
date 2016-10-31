@@ -1,0 +1,344 @@
+compile function oi2web_style( directive, widget, params )
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+//																								
+// This program is proprietary and is not to be used by or disclosed to others, 	
+// nor is it to be copied without written permission from Envizion Systems Pty Ltd.
+//	
+// Name       : 																
+//																								
+// Description:	make ENglish the [W] style fields
+//
+// * @package	PowerForce
+// * @author	Martin Drenovac (for Envizion Systems Pty Ltd)
+// * @copyright	Copyright (c) 2007 - present, Envizion Systems Pty Ltd
+// * @licence	http://powerforcesoftware.com/user/license.html
+// * @link		http://powerforcesoftware.com
+// * @since		Version 1.0
+//																										
+// History (Date, Initials, Notes)																
+// 24/10/16 mpd Original programmer
+// 28/10/16 mpd use mpd_win_used to create unique([W]<10> values)															
+//																								
+// Date: 2016/10/24 17:34:22 +1000 (Mon 24 Oct 2016)
+////////////////////////////////////////////////////////////////////////////////
+// directive -> widget type (EDITTABLE, BUTTON) (TODO Next release)
+// widget -> Style as in [W]<10> 0x50000020
+// params -> TestStyle (decimal or 0X variant) to check for
+////////////////////////////////////////////////////////////////////////////////
+#PRAGMA OUTPUT SYSLISTS mpd_style
+
+* 	$INSERT nv_copyright
+* 	$INSERT nv_userprefs
+$INSERT OIWIN_EQUATES															; // OIWIN structure (SYSREPOSWINS records)
+$INSERT COLSTYLE_EQUATES
+
+DECLARE function	nv_error,	nv_utils
+DECLARE	subroutine	check_assignments
+check_assignments( directive, widget, params )
+
+EQU ver$$	TO "ver$$"
+nv_version$$ = "[ver: g301]"
+IF directive[1,5] _eqc ver$$ THEN
+	RETURN nv_version$$
+END
+
+retval = ""
+BEGIN CASE
+	CASE directive _eqc "style"		; GOSUB get_styles:						; // use this to call 'here' as function
+	CASE 1							; GOSUB work:								; // this will be a manual test run, when nothing is passed in 
+END CASE
+
+RETURN retval
+////////////////////////////////////////////////////////////////////////////////
+// 
+////////////////////////////////////////////////////////////////////////////////
+work:
+	GOSUB load_all_styles:														; // load up test data
+	GOSUB load_test_styles:
+	GOSUB load_style_desc:
+	
+	items	= DCOUNT(x,@FM)
+	results	= ""
+	////////////////////////////////////////////////////////////////////////////////
+	// idea here is to loop through each of the list of unique STYLEs found in MMS (the app)
+	// but, only doing a = 10, to limit loop
+	////////////////////////////////////////////////////////////////////////////////
+	FOR a = 10 TO 10															; // just pick one example for local debug
+		this		= x<a>
+		widget		= FIELD(this,@SVM,1)										; // that's the seperator
+		FOR z = 1 TO DCOUNT(y,@FM)												; // test each possible style value
+			testStyle	= y<z>
+			
+			GOSUB extract_styles:
+			IF bExists THEN
+				results<-1>	= this:@VM:bExists:@VM:sd<z>:@VM:testStyle
+			END
+		NEXT z
+	NEXT a
+	
+	retval	= results
+RETURN
+
+////////////////////////////////////////////////////////////////////////////////
+// we're passed in a widget, return all of its styles
+// TODO - code to do different variations depending on widget type passed in
+////////////////////////////////////////////////////////////////////////////////
+get_styles:
+	widget	= FIELD(widget,@SVM,1)												; // in case both parts are passed in
+	this 	= widget															; // the 0x.. element value passed in
+	//	GOSUB load_all_styles:														; // load up test data
+	GOSUB load_test_styles:
+	GOSUB load_style_desc:
+	results	= ""
+	FOR z = 1 TO DCOUNT(y,@FM)													; // test each possible style value
+		testStyle	= y<z>
+		GOSUB extract_styles:
+		IF bExists THEN
+//			results<1,-1>	= "{ id: ":QUOTE(sd<z>):", exists: ":bExists :" },"
+			results<1,-1>	= "{ id: ":sd<z>:", exists: ":bExists :" },"
+		END
+	NEXT z
+	IF results[-1,1] = "," THEN
+		results[-1,1] = ""
+	END
+	retval	= results 
+RETURN
+
+////////////////////////////////////////////////////////////////////////////////
+extract_styles:
+////////////////////////////////////////////////////////////////////////////////
+	// To test if a style is set, use the bitand function on the current style with the style that you are looking for.
+	// The following function could be used to test if a style is set for a specific control:
+	// function IsStyleSet(CtrlEntID, TestStyle)
+	// declare function   Get_Property
+	// declare subroutine Set_Property
+	//
+	// * Get the current style
+	// Style = Get_Property(CtrlEntID, "STYLE")
+	style = widget
+	// * the style property can be in hex format but BITOR only works with decimal integers.
+	IF Style [1,2] _eqc "0x" THEN
+		CONVERT @LOWER.CASE TO @UPPER.CASE IN Style
+		Style = ICONV(Style [3,99], "MX")
+	END
+	
+	// * Do same with TestStyle bitor only works with decimal integers.
+	IF TestStyle [1,2] _eqc "0x" THEN
+		CONVERT @LOWER.CASE TO @UPPER.CASE IN TestStyle
+		Style = ICONV(TestStyle [3,99], "MX")
+	END
+	
+	* check for the specified TestStyle
+	bExists = (BITAND(Style, TestStyle) > 0)
+	retval	= bExists
+RETURN bExists
+
+////////////////////////////////////////////////////////////////////////////////
+// all styles: all the <10> values from MMS [W] repos
+// this is unique values of <10> in [mms]
+////////////////////////////////////////////////////////////////////////////////
+load_all_styles:
+	x		= ""
+	x<-1> = "0x40000000"
+	x<-1> = "0x40000001"
+	x<-1> = "0x40800080"
+	x<-1> = "0x40800880"
+	x<-1> = "0x408041f4"
+	x<-1> = "0x48000003"
+	x<-1> = "0x48800080"
+	x<-1> = "0x50000000"
+	x<-1> = "0x50000001"
+	x<-1> = "0x50000002"
+	x<-1> = "0x50000003"
+	x<-1> = "0x50000007"
+	x<-1> = "0x5000000b"
+	x<-1> = "0x50200002"
+	x<-1> = "0x50800044"
+	x<-1> = "0x50800080"
+	x<-1> = "0x50800088"
+	x<-1> = "0x508000c0"
+	x<-1> = "0x50800888"
+	x<-1> = "0x508041fc"
+	x<-1> = "0x50a00044"
+	x<-1> = "0x50a001f4"
+	x<-1> = "0x50b041f4"
+	x<-1> = "0x52000000"
+	x<-1> = "0x58800080"
+	x<-1> = "0x58800088"
+	x<-1> = "0x5a000000"
+	x<-1> = "0x40000000ü0x0"
+	x<-1> = "0x40000001ü0x0"
+	x<-1> = "0x40000002ü0x0"
+	x<-1> = "0x40000003ü0x0"
+	x<-1> = "0x40000007ü0x0"
+	x<-1> = "0x4000000bü0x0"
+	x<-1> = "0x408001c4ü0x0"
+	x<-1> = "0x408041f4ü0x0"
+	x<-1> = "0x409001f0ü0x0"
+	x<-1> = "0x42000000ü0x0"
+	x<-1> = "0x48000000ü0x0"
+	x<-1> = "0x48000001ü0x0"
+	x<-1> = "0x48000002ü0x0"
+	x<-1> = "0x48a011f4ü0x0"
+	x<-1> = "0x50000000ü0x0"
+	x<-1> = "0x50000001ü0x0"
+	x<-1> = "0x50000002ü0x0"
+	x<-1> = "0x50000003ü0x0"
+	x<-1> = "0x50000007ü0x0"
+	x<-1> = "0x50002000ü0x0"
+	x<-1> = "0x50200002ü0x0"
+	x<-1> = "0x50200042ü0x0"
+	x<-1> = "0x50200103ü0x0"
+	x<-1> = "0x50800000ü0x0"
+	x<-1> = "0x50800001ü0x0"
+	x<-1> = "0x508000c0ü0x0"
+	x<-1> = "0x508000c4ü0x0"
+	x<-1> = "0x508000f4ü0x0"
+	x<-1> = "0x509001f0ü0x0"
+	x<-1> = "0x50a000f4ü0x0"
+	x<-1> = "0x50a001c0ü0x0"
+	x<-1> = "0x50a050f0ü0x0"
+	x<-1> = "0x50a050f4ü0x0"
+	x<-1> = "0x50b000f0ü0x0"
+	x<-1> = "0x50b001f4ü0x0"
+	x<-1> = "0x52000000ü0x0"
+	x<-1> = "0x58000000ü0x0"
+	x<-1> = "0x58000002ü0x0"
+	x<-1> = "0x58000003ü0x0"
+	x<-1> = "0x58002000ü0x0"
+	x<-1> = "0x58200003ü0x0"
+	x<-1> = "0x588041c4ü0x0"
+	x<-1> = "0x58a051f4ü0x0"
+	x<-1> = "0x40800080ü0x200"
+	x<-1> = "0x50000080ü0x200"
+	x<-1> = "0x50000082ü0x200"
+	x<-1> = "0x50000088ü0x200"
+	x<-1> = "0x500000a0ü0x200"
+	x<-1> = "0x50000181ü0x200"
+	x<-1> = "0x50000880ü0x200"
+	x<-1> = "0x50800044ü0x200"
+	x<-1> = "0x50800080ü0x200"
+	x<-1> = "0x50800088ü0x200"
+	x<-1> = "0x50800181ü0x200"
+	x<-1> = "0x50800880ü0x200"
+	x<-1> = "0x50800882ü0x200"
+	x<-1> = "0x50800888ü0x200"
+	x<-1> = "0x50a003d1ü0x200"
+	x<-1> = "0x58000080ü0x200"
+	x<-1> = "0x58800044ü0x200"
+	x<-1> = "0x58800080ü0x200"
+RETURN
+
+load_test_styles:
+	y		= ""
+	y<-1> = RESIZABLESTYLE$			; // TO 1
+	y<-1> = FIXEDSTYLE$				; // TO 2
+	y<-1> = EDITABLESTYLE$			; // TO 4
+	y<-1> = PROTECTSTYLE$			; // TO 8
+	y<-1> = UPPERCASESTYLE$			; // TO 20
+	y<-1> = HIDDENSTYLE$			; // TO 32
+	y<-1> = LEFTJUSTSTYLE$			; // TO 0
+	y<-1> = CENTREJUSTSTYLE$		; // TO 64
+	y<-1> = RIGHTJUSTSTYLE$			; // TO 128
+	y<-1> = HEADINGLEFTSTYLE$		; // TO 0
+	y<-1> = HEADINGCENTRESTYLE$		; // TO 256
+	y<-1> = HEADINGRIGHTSTYLE$		; // TO 512
+	y<-1> = SKIPPEDSTYLE$			; // TO 4100
+	y<-1> = LOCKEDSTYLE$			; // TO 8192
+	y<-1> = SORTASCSTYLE$			; // TO 16384
+	y<-1> = SORTDESCSTYLE$			; // TO 32768
+	y<-1> = CHECKBOXSTYLE$			; // TO 65536
+	y<-1> = DROPDOWNSTYLE$			; // TO 131072
+	y<-1> = PERMITROWSELECT$		; // TO 256
+	y<-1> = MLHEADERSTYLE$			; // TO 262144
+	y<-1> = RALIGNCHECKBOXSTYLE$	; // TO 524288
+	
+	EQU WS_CHILD$			TO		0X40000000									; // * Window Styles
+	EQU WS_BORDER$			TO		  0X800000
+	EQU WS_CAPTION$			TO		  0XC00000
+	EQU WS_THICKFRAME$		TO		   0X40000
+	
+	y<-1> = ENABLEDRAGSTYLE$		; // TO 0X10000000
+	y<-1> = ENABLEDROPSTYLE$		; // TO 0X20000000
+	y<-1> = WS_CHILD$				; // TO	0X40000000
+	y<-1> = WS_BORDER$				; // TO 0X800000
+	y<-1> = WS_CAPTION$				; // TO	0XC00000
+	y<-1> = WS_THICKFRAME$			; // TO 0X40000
+	* style bit for the edit table to horizontally lock a column
+	EQU LOCK_STYLE$ TO 8192														; // same as above, this is from HELP.chm
+	
+	* Extended Window Styles														; // this is field <10>
+	EQU WS_EX_STATICEDGE$	TO  	   0X20000
+	EQU WS_EX_CLIENTEDGE$	TO			 0X200										; // The window has a border with a sunken edge.
+	
+RETURN
+
+load_style_desc:
+	sd	= ""
+	sd<-1> = "RESIZABLE_STYLE$"
+	sd<-1> = "FIXED_STYLE$"
+	sd<-1> = "EDITABLE_STYLE$"
+	sd<-1> = "PROTECT_STYLE$"
+	sd<-1> = "UPPERCASE_STYLE$"
+	sd<-1> = "HIDDEN_STYLE$"
+	sd<-1> = "EFTJUST_STYLE$"
+	sd<-1> = "ENTREJUST_STYLE$"
+	sd<-1> = "RIGHTJUST_STYLE$"
+	sd<-1> = "HEADINGLEFT_STYLE$"
+	sd<-1> = "HEADINGCENTRE_STYLE$"
+	sd<-1> = "HEADINGRIGHT_STYLE$"
+	sd<-1> = "SKIPPED_STYLE$"
+	sd<-1> = "LOCKED_STYLE$"
+	sd<-1> = "SORTASC_STYLE$"
+	sd<-1> = "SORTDESC_STYLE$"
+	sd<-1> = "CHECKBOX_STYLE"
+	sd<-1> = "DROPDOWN_STYLE$"
+	sd<-1> = "PERMIT_ROW_SELECT$"
+	sd<-1> = "MLHEADER_STYLE$"
+	sd<-1> = "RALIGN_CHECKBOX_STYLE$"
+	sd<-1> = "ENABLE_DRAG_STYLE$"
+	sd<-1> = "ENABLE_DROP_STYLE$"
+	sd<-1> = "WS_CHILD$"
+	sd<-1> = "WS_BORDER$"
+	sd<-1> = "WS_CAPTION$"
+	sd<-1> = "WS_THICK_FRAME$"	
+RETURN
+
+load_one_window:
+	file$$		= "SYSREPOSWINS"
+	OPEN "", file$$ TO sr$f ELSE
+		RETURN nv_error("XF07", nv_utils("OPEN", file$$))
+	END
+	
+	win_id	= "MMS**USERLOGIN2"													; // we'd pass this in though 'arg' in the call
+	
+	READ buffer FROM sr$f, win_id ELSE
+		mpd = 'a'
+		RETURN 0
+	END
+	
+	* equ POS_SDKSTYLE$       to 10
+	* equ POS_PSSTYLE$        to 11
+	
+	
+	r3	= FIELD(buffer,@RM,3,1)
+	items	= DCOUNT(r3,@FM)
+	list	= ""
+	FOR a = 1 TO items
+		widget31	= FIELD(r3,@FM,a,1)
+		CONVERT @VM TO @FM IN widget31
+		widget_id	= widget31<3>
+		et_style	= widget31<POS_SDKSTYLE$>									; // et_style = this_control<1, 10, 1>
+		f11			= widget31<POS_PSSTYLE$>
+		//	et_style	= "0x50000009":@SVM:"0x200"
+		list<-1>	= widget_id:@VM:et_style
+		et_style	= FIELD(et_style,@SVM,1)
+		et_style_i	= ICONV(et_style[3,99], 'MX')
+		et_style_o	= OCONV(et_style[3,99], 'MX')
+		show_rownum = BITOR(et_style_i, 16384)
+		
+	NEXT a
+	
+	void = nv_utils('syslists',list,"STYLES")									; // write record for manual editor access
+RETURN

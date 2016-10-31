@@ -1,0 +1,54 @@
+compile function test_oi2web_style( void )
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+//																								
+// This program is proprietary and is not to be used by or disclosed to others, 	
+// nor is it to be copied without written permission from Envizion Systems Pty Ltd.
+//	
+// Name       : 																
+//																								
+// Description:	test module for oi2web_style
+//
+// * @package	PowerForce
+// * @author	Martin Drenovac (for Envizion Systems Pty Ltd)
+// * @copyright	Copyright (c) 2007 - present, Envizion Systems Pty Ltd
+// * @licence	http://powerforcesoftware.com/user/license.html
+// * @link		http://powerforcesoftware.com
+// * @since		Version 1.0
+//																										
+// History (Date, Initials, Notes)																
+// 31/10/16 mpd Original programmer																	
+//																								
+// Date: 2016/10/31 17:34:22 +1000 (Mon 31 Oct 2016)
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+#PRAGMA OUTPUT SYSLISTS mpd_test_oi2web_style
+
+* 	$INSERT nv_copyright
+* 	$INSERT nv_userprefs
+
+DECLARE function	oi2web_style
+DECLARE	subroutine	check_assignments
+check_assignments( void )
+
+nv_version$$ = "[ver: g305]"
+IF void[1,5] _eqc "ver$$" THEN
+	RETURN nv_version$$
+END
+
+directive	= ""
+widget		= ""
+params		= ""
+void 		= oi2web_style(directive, widget, params)
+
+directive	= "style"
+widget 		= "0x508041fc"
+void2 		= oi2web_style(directive, widget, params)
+
+
+widget = "0x50b001f4ü0x0"
+void3 		= oi2web_style(directive, widget, params)
+
+widget	= "0x82c80000"
+void4 		= oi2web_style(directive, widget, params)
+DEBUG
